@@ -31,5 +31,5 @@ Optional:
 - `GET /session-url`: returns the currently configured upstream allocator URL
 - `GET /config`: alias for `/session-url`
 - `POST /session`: proxies the session allocation request to the upstream URL,
-  including valid incoming bearer `Authorization` and `X-Forwarded-For`
-  headers when present
+  preserving the incoming `User-Agent` and including valid bearer
+  `Authorization` and `X-Forwarded-For` headers when present

@@ -114,3 +114,13 @@ class SessionProxyTests(unittest.IsolatedAsyncioTestCase):
             post["headers"]["X-Forwarded-For"],
             "203.0.113.8, 10.0.0.4",
         )
+
+    async def test_forwards_original_user_agent_to_upstream(self):
+        post = await self.proxy({"User-Agent": "ReachyMini/1.2.3"})
+
+        self.assertEqual(post["headers"]["User-Agent"], "ReachyMini/1.2.3")
+
+    async def test_uses_empty_user_agent_when_original_is_missing(self):
+        post = await self.proxy({})
+
+        self.assertEqual(post["headers"]["User-Agent"], "")

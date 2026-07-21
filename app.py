@@ -69,7 +69,12 @@ def _bearer_authorization(value: str | None) -> str | None:
 
 
 def _upstream_headers(request: Request) -> dict[str, str]:
-    headers = {"X-Reachy-Mini-Realtime-URL": "1"}
+    headers = {
+        "X-Reachy-Mini-Realtime-URL": "1",
+        # An explicit empty value also prevents httpx from substituting its
+        # own User-Agent when the original request did not provide one.
+        "User-Agent": request.headers.get("user-agent", ""),
+    }
     forwarded_headers = {
         "Content-Type": request.headers.get("content-type"),
         "Accept": request.headers.get("accept"),
