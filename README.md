@@ -30,4 +30,6 @@ Optional:
 - `GET /ready`: readiness; fails if the upstream URL is missing or invalid
 - `GET /session-url`: returns the currently configured upstream allocator URL
 - `GET /config`: alias for `/session-url`
-- `POST /session`: proxies the session allocation request to the upstream URL
+- `POST /session`: proxies the session allocation request to the upstream URL,
+  including valid incoming bearer `Authorization` and `X-Forwarded-For`
+  headers when present

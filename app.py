@@ -60,6 +60,26 @@ def _no_store_headers() -> dict[str, str]:
     return {"Cache-Control": "no-store"}
 
 
+def _bearer_authorization(value: str | None) -> str | None:
+    scheme, separator, token = (value or "").partition(" ")
+    token = token.strip()
+    if not separator or scheme.lower() != "bearer" or not token:
+        return None
+    return f"Bearer {token}"
+
+
+def _upstream_headers(request: Request) -> dict[str, str]:
+    headers = {"X-Reachy-Mini-Realtime-URL": "1"}
+    forwarded_headers = {
+        "Content-Type": request.headers.get("content-type"),
+        "Accept": request.headers.get("accept"),
+        "Authorization": _bearer_authorization(request.headers.get("authorization")),
+        "X-Forwarded-For": request.headers.get("x-forwarded-for"),
+    }
+    headers.update({name: value for name, value in forwarded_headers.items() if value})
+    return headers
+
+
 def _not_configured_response() -> JSONResponse:
     return JSONResponse(
         {
@@ -144,13 +164,7 @@ async def create_session(request: Request) -> Response:
         return _not_configured_response()
 
     body = await request.body()
-    headers = {"X-Reachy-Mini-Realtime-URL": "1"}
-    content_type = request.headers.get("content-type")
-    if content_type:
-        headers["Content-Type"] = content_type
-    accept = request.headers.get("accept")
-    if accept:
-        headers["Accept"] = accept
+    headers = _upstream_headers(request)
 
     try:
         async with httpx.AsyncClient(timeout=config.timeout_s) as client:
