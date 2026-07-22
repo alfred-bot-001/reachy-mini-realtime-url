@@ -94,10 +94,21 @@ class SessionProxyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(post["headers"]["Accept"], "application/json")
         self.assertEqual(post["headers"]["X-Reachy-Mini-Realtime-URL"], "1")
 
+    async def test_forwards_reachy_authorization_to_upstream(self):
+        post = await self.proxy(
+            {"X-Reachy-Mini-Authorization": "Bearer hf_user_token"}
+        )
+
+        self.assertEqual(
+            post["headers"]["X-Reachy-Mini-Authorization"],
+            "Bearer hf_user_token",
+        )
+
     async def test_omits_authorization_when_request_has_no_token(self):
         post = await self.proxy({})
 
         self.assertNotIn("Authorization", post["headers"])
+        self.assertNotIn("X-Reachy-Mini-Authorization", post["headers"])
         self.assertNotIn("X-Forwarded-For", post["headers"])
 
     async def test_does_not_forward_non_bearer_authorization(self):

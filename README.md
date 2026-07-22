@@ -32,4 +32,5 @@ Optional:
 - `GET /config`: alias for `/session-url`
 - `POST /session`: proxies the session allocation request to the upstream URL,
   preserving the incoming `User-Agent` and including valid bearer
-  `Authorization` and `X-Forwarded-For` headers when present
+  `Authorization`, `X-Reachy-Mini-Authorization`, and `X-Forwarded-For` headers
+  when present

@@ -79,6 +79,9 @@ def _upstream_headers(request: Request) -> dict[str, str]:
         "Content-Type": request.headers.get("content-type"),
         "Accept": request.headers.get("accept"),
         "Authorization": _bearer_authorization(request.headers.get("authorization")),
+        "X-Reachy-Mini-Authorization": _bearer_authorization(
+            request.headers.get("x-reachy-mini-authorization")
+        ),
         "X-Forwarded-For": request.headers.get("x-forwarded-for"),
     }
     headers.update({name: value for name, value in forwarded_headers.items() if value})
