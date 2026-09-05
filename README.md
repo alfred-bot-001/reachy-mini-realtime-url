@@ -34,3 +34,19 @@ Optional:
   preserving the incoming `User-Agent` and including valid bearer
   `Authorization`, `X-Reachy-Mini-Authorization`, and `X-Forwarded-For` headers
   when present
+
+## Session response headers
+
+The proxy preserves the upstream status and body, plus `Content-Type`,
+`Retry-After`, `WWW-Authenticate`, `Authentication-Info`, `Location`, and `Allow`.
+Repeated authentication challenges remain separate fields. Relative `Location`
+values are resolved against the upstream session URL.
+
+It also forwards `Request-ID`, `X-Request-ID`, `X-Correlation-ID`,
+`X-Amzn-RequestId`, `X-Amzn-Trace-Id`, `RateLimit`, and headers beginning with
+`RateLimit-` or `X-RateLimit-`, when present.
+
+Headers named by `Connection` are excluded. Other upstream headers, including
+connection controls, cookies, and CORS policy, are not copied. Responses retain
+`Cache-Control: no-store`. Since HTTPX decompresses the upstream body, the proxy
+recomputes `Content-Length` and does not forward upstream `Content-Encoding`.

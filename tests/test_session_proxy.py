@@ -11,7 +11,7 @@ import app as proxy_app
 class FakeUpstreamResponse:
     content = b'{"session_id":"session-1"}'
     status_code = 200
-    headers = {"content-type": "application/json"}
+    headers = httpx.Headers({"content-type": "application/json"})
 
 
 class FakeAsyncClient:

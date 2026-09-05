@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 
 import httpx
 from fastapi import FastAPI, Request
@@ -13,6 +13,20 @@ from fastapi.responses import JSONResponse, Response
 SERVICE_NAME = "reachy-mini-realtime-url"
 UPSTREAM_ENV_NAME = "UPSTREAM_SESSION_URL"
 DEFAULT_TIMEOUT_SECONDS = 10.0
+FORWARDED_RESPONSE_HEADERS = frozenset({
+    b"content-type",
+    b"retry-after",
+    b"www-authenticate",
+    b"authentication-info",
+    b"location",
+    b"allow",
+    b"request-id",
+    b"x-request-id",
+    b"x-correlation-id",
+    b"x-amzn-requestid",
+    b"x-amzn-trace-id",
+    b"ratelimit",
+})
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper())
 logger = logging.getLogger(SERVICE_NAME)
@@ -58,6 +72,35 @@ def _upstream_config() -> UpstreamConfig | None:
 
 def _no_store_headers() -> dict[str, str]:
     return {"Cache-Control": "no-store"}
+
+
+def _proxy_response(upstream: httpx.Response, *, session_url: str) -> Response:
+    # HTTPX has decoded the body. Recompute framing and retain our cache policy
+    # instead of copying Content-Encoding, Content-Length, or Cache-Control.
+    response = Response(
+        content=upstream.content,
+        status_code=upstream.status_code,
+        headers=_no_store_headers(),
+    )
+    connection_fields = {
+        field.strip().lower()
+        for name, value in upstream.headers.raw
+        if name.lower() == b"connection"
+        for field in value.split(b",")
+    }
+    for name, value in upstream.headers.raw:
+        name = name.lower()
+        allowed = name in FORWARDED_RESPONSE_HEADERS or name.startswith((b"ratelimit-", b"x-ratelimit-"))
+        if not allowed or name in connection_fields:
+            continue
+        if name == b"location":
+            # Relative locations refer to the allocator, not the Space's origin.
+            value = urljoin(session_url, value.decode("latin-1")).encode("latin-1")
+        # Keep repeated authentication challenges as separate header fields.
+        response.raw_headers.append((name, value))
+    if "content-type" not in response.headers:
+        response.headers["Content-Type"] = "application/json"
+    return response
 
 
 def _bearer_authorization(value: str | None) -> str | None:
@@ -192,14 +235,4 @@ async def create_session(request: Request) -> Response:
             headers=_no_store_headers(),
         )
 
-    media_type = upstream_response.headers.get("content-type") or "application/json"
-    response_headers = _no_store_headers()
-    retry_after = upstream_response.headers.get("retry-after")
-    if retry_after is not None:
-        response_headers["Retry-After"] = retry_after
-    return Response(
-        content=upstream_response.content,
-        status_code=upstream_response.status_code,
-        media_type=media_type,
-        headers=response_headers,
-    )
+    return _proxy_response(upstream_response, session_url=config.session_url)
