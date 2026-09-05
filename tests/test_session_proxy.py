@@ -1,7 +1,8 @@
 import os
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
+import httpx
 from fastapi import Request
 
 import app as proxy_app
@@ -135,3 +136,33 @@ class SessionProxyTests(unittest.IsolatedAsyncioTestCase):
         post = await self.proxy({})
 
         self.assertEqual(post["headers"]["User-Agent"], "")
+
+    async def test_preserves_upstream_retry_after(self):
+        for status_code, retry_after in (
+            (429, "900"),
+            (429, "Sat, 05 Sep 2026 12:00:00 GMT"),
+            (503, "60"),
+            (429, None),
+            (200, None),
+        ):
+            with self.subTest(status_code=status_code, retry_after=retry_after):
+                upstream = httpx.Response(
+                    status_code,
+                    json={"detail": {"retry_after_s": 900}},
+                    headers={"Retry-After": retry_after} if retry_after is not None else {},
+                )
+                with (
+                    patch.dict(
+                        os.environ,
+                        {proxy_app.UPSTREAM_ENV_NAME: "https://allocator.example/session"},
+                    ),
+                    patch.object(proxy_app.httpx, "AsyncClient", FakeAsyncClient),
+                    patch.object(FakeAsyncClient, "post", AsyncMock(return_value=upstream)),
+                ):
+                    response = await proxy_app.create_session(request_with_headers({}))
+
+                self.assertEqual(response.status_code, status_code)
+                self.assertEqual(response.body, upstream.content)
+                self.assertEqual(response.headers["content-type"], "application/json")
+                self.assertEqual(response.headers["cache-control"], "no-store")
+                self.assertEqual(response.headers.get("retry-after"), retry_after)

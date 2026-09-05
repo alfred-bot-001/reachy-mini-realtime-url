@@ -193,9 +193,13 @@ async def create_session(request: Request) -> Response:
         )
 
     media_type = upstream_response.headers.get("content-type") or "application/json"
+    response_headers = _no_store_headers()
+    retry_after = upstream_response.headers.get("retry-after")
+    if retry_after is not None:
+        response_headers["Retry-After"] = retry_after
     return Response(
         content=upstream_response.content,
         status_code=upstream_response.status_code,
         media_type=media_type,
-        headers=_no_store_headers(),
+        headers=response_headers,
     )
