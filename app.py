@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 import os
+import random
+import time
 from dataclasses import dataclass
 from urllib.parse import urljoin, urlsplit
 
@@ -12,6 +14,7 @@ from fastapi.responses import JSONResponse, Response
 
 SERVICE_NAME = "reachy-mini-realtime-url"
 UPSTREAM_ENV_NAME = "UPSTREAM_SESSION_URL"
+UPSTREAM_B_ENV_NAME = "UPSTREAM_SESSION_URL_B"
 DEFAULT_TIMEOUT_SECONDS = 10.0
 FORWARDED_RESPONSE_HEADERS = frozenset({
     b"content-type",
@@ -36,7 +39,7 @@ app = FastAPI(title="Reachy Mini Realtime URL", version="0.1.0")
 
 @dataclass(frozen=True)
 class UpstreamConfig:
-    session_url: str
+    session_urls: tuple[str, ...]
     timeout_s: float
 
 
@@ -67,7 +70,11 @@ def _upstream_config() -> UpstreamConfig | None:
     session_url = _configured_session_url()
     if session_url is None:
         return None
-    return UpstreamConfig(session_url=_validate_session_url(session_url), timeout_s=_timeout_seconds())
+    session_urls: tuple[str, ...] = (_validate_session_url(session_url),)
+    alternative_url = os.getenv(UPSTREAM_B_ENV_NAME, "").strip()
+    if alternative_url:
+        session_urls += (_validate_session_url(alternative_url),)
+    return UpstreamConfig(session_urls=session_urls, timeout_s=_timeout_seconds())
 
 
 def _no_store_headers() -> dict[str, str]:
@@ -197,7 +204,7 @@ async def session_url() -> JSONResponse:
         return _invalid_config_response(exc)
     if config is None:
         return _not_configured_response()
-    return JSONResponse({"session_url": config.session_url}, headers=_no_store_headers())
+    return JSONResponse({"session_url": random.choice(config.session_urls)}, headers=_no_store_headers())
 
 
 @app.get("/config")
@@ -216,23 +223,32 @@ async def create_session(request: Request) -> Response:
 
     body = await request.body()
     headers = _upstream_headers(request)
+    selected_url = random.choice(config.session_urls)
+    backend = "A" if selected_url == config.session_urls[0] else "B"
+    started_at = time.perf_counter()
 
     try:
         async with httpx.AsyncClient(timeout=config.timeout_s) as client:
-            upstream_response = await client.post(config.session_url, content=body, headers=headers)
+            upstream_response = await client.post(selected_url, content=body, headers=headers)
     except httpx.TimeoutException:
-        logger.warning("Timed out while calling upstream session URL")
+        logger.warning("Session allocation backend=%s timed out", backend)
         return JSONResponse(
             {"ok": False, "error": "upstream_timeout"},
             status_code=504,
-            headers=_no_store_headers(),
+            headers={**_no_store_headers(), "X-Reachy-Mini-Backend": backend},
         )
     except httpx.HTTPError as exc:
-        logger.warning("Failed to call upstream session URL: %s", exc)
+        logger.warning("Session allocation backend=%s failed: %s", backend, exc)
         return JSONResponse(
             {"ok": False, "error": "upstream_unreachable"},
             status_code=502,
-            headers=_no_store_headers(),
+            headers={**_no_store_headers(), "X-Reachy-Mini-Backend": backend},
         )
 
-    return _proxy_response(upstream_response, session_url=config.session_url)
+    logger.info(
+        "Session allocation backend=%s status=%s elapsed_ms=%.0f",
+        backend, upstream_response.status_code, (time.perf_counter() - started_at) * 1000,
+    )
+    response = _proxy_response(upstream_response, session_url=selected_url)
+    response.headers["X-Reachy-Mini-Backend"] = backend
+    return response

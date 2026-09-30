@@ -21,6 +21,7 @@ The service validates that the configured value is an absolute `http` or
 
 Optional:
 
+- `UPSTREAM_SESSION_URL_B`: second allocator URL; enables a 50/50 split per request
 - `REQUEST_TIMEOUT_SECONDS`: upstream request timeout, default `10`
 - `LOG_LEVEL`: Python logging level, default `INFO`
 
@@ -28,12 +29,30 @@ Optional:
 
 - `GET /health`: process health; does not fail if the upstream URL is missing
 - `GET /ready`: readiness; fails if the upstream URL is missing or invalid
-- `GET /session-url`: returns the currently configured upstream allocator URL
+- `GET /session-url`: returns an independently selected upstream allocator URL
 - `GET /config`: alias for `/session-url`
 - `POST /session`: proxies the session allocation request to the upstream URL,
   preserving the incoming `User-Agent` and including valid bearer
   `Authorization`, `X-Reachy-Mini-Authorization`, and `X-Forwarded-For` headers
   when present
+
+## A/B testing
+
+Set `UPSTREAM_SESSION_URL` to the current allocator session URL and
+`UPSTREAM_SESSION_URL_B` to the second allocator session URL in the Space settings.
+Keep backend URLs out of this repository.
+
+Each request independently chooses A or B with 50% probability. Small samples
+can be uneven. The returned `connect_url` keeps the conversation on the allocated
+backend; a reconnect may choose a different one. Both URLs are validated before
+serving requests. Requests are not retried on the other backend after failures.
+
+Session responses include `X-Reachy-Mini-Backend: A` or `B`. Logs record the
+selected backend, upstream status, and allocation latency. Remove
+`UPSTREAM_SESSION_URL_B` to send all requests to A again.
+
+Conversation apps must use the Space's `/session` URL in deployed mode. A local
+override pointing directly at an allocator bypasses this experiment.
 
 ## Session response headers
 
